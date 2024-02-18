@@ -1,0 +1,3083 @@
+(*
+Formális szemantika, 1. gyakorlata a 2-es csoportnak
+
+Kaposi Ambrus, akaposi@inf.elte.hu
+Programozási Nyelvek és Fordítóprogrmaok
+
+szervezési:
+ * felvétel (Varga Bence (Felhő) letölti őket)
+ * tegeződünk
+ * BEAD-ban beadandók, kiszh-k, fontos, hogy ott azt vegyétek fel, amire jártok
+ * 4.00-5.30 pontosan
+ * kötelező járni, 3 hiányzás, 4 megengedhető (13 gyakorlatból); jelenlét ellenőrzés implicit módon
+ * javaslat: kamerát bekapcsolni
+ * kérdezzetek! nem kell jelentkezni. cél: mindenki mindent értsen, amit elmondok; chat-ben is kérdezzetek
+ * órán kívül kérdések: Teams csatornában
+ * óra anyaga: https://people.inf.elte.hu/akaposi/fsz  gy01pre.v, végső fájl: gy01_2.v
+                              
+rendszerkövetelmények:
+ * saját számítógépen Coq https://coq.inria.fr (online is van, pl. https://x80.org/rhino-coq )
+ * bead szerveren:
+   The Coq Proof Assistant, version 8.9.0 (February 2019)
+   compiled on Feb 6 2019 17:43:20 with OCaml 4.05.0
+
+követelmények:
+ * házi feladat a következő gyakorlatra (felkészülés)
+ * minden óra első 10 percében kiszh, amit 0/1 ponttal értékelünk (beszámít a jegybe)
+ * jegy: 12 pont a kiszh-kból max, +2 -t a beadandóból, és 5 ponttól kettes
+ * beadandó: elfogadott kell, hogy legyen
+ * gyakorlati jegyhez min. 5 pont és elfogadott beadandó
+ * nagyjából: "5 2, 6-7 3, 8-9 4, 10-12 5"
+
+Tematika:
+1. Coq bevezető, felsorolási típusok (pl. Bool, Weekday),
+   egyszerű műveletek ezekkel a típusokkal, illetve ezen
+   műveletek tulajdonságai (pl. egységelem, dupla tagadás, stb.)
+2. Természetes számok típusa, összeadás, rekurzió, indukció,
+   kongruencia, jobb oldali egységelem, rákövetkező és az
+   összeadás kapcsolata, egyéb induktív típusok (pl. bináris fák)
+3. Aritmetikai kifejezésnyelv és denotációs szemantika, példa
+   kiértékelések
+4. ísszeadás optimalizálás (0 kiegyszerűsítése)
+5. Változók, állapotok, állapot frissítése, zárt kifejezés
+   fogalma, zárt kifejezések kiértékelésének állapottól való
+   függetlensége
+6. Zárt kifejezések leírása logikai függvénnyel ekvivalens a
+   predikátummal való megadással, aeval determinizmus
+7. A kifejezésnyelv strukturális és természetes operációs
+   szemantikája, denotációs szemantikával való ekvivalencia
+
+TAVASZI SZíNET
+
+9.  Utasítások és denotációs szemantikájuk, példa kiértékelések,
+    végtelen ciklus problémája
+10. Utasítások big-step szemanitkája, példa kiértékelések
+11. Big-step szemantika tulajdonságok (pl. determinisztikusság)
+12. Programok ekvivalenciája
+13. Haskell export, kivételek, állapot megadása
+    adatszerkezettel (pl. listával)
+
+
+Coq: programozási nyelv, bizonyítás
+  t : A -> B    t programnak a típusa A -> B
+                t egy bizonyítás, ami A-ból B-t bizonyítja
+60-as évek végén: Curry-Howard izomorfizmus, "propositions as types" "állítás, mint típus"
+  program    : típus          típusellenőrzés
+  bizonyítás : állítás        bizonyításellenőrzés
+legelső ilyen nyelv: De Bruijn holland matematikus: Automath rendszer
+ 
+Coq egy tiszta, teljes funkcionális programozási nyelv (Haskell-hez hasonló);
+  lehet bizonyításokat is írni benne
+Coq látszólag két nyelv: programozás nyelve (Haskell-szerű), bizonyítások nyelve (taktikák)
+  polimorf:                       reverse : â a . List a -> List a
+  függő típusokra van szükség.    VecBool : Int -> Tipus
+                                  reverse : â n . VecBool n -> VecBool n
+  Conor McBride
+Haskell      System F (Girard-Reynolds, 80-as évek eleje)
+Coq          Type theory (Per Martin-Löf, 70-es években)      BoringSSL, CompCert
+      Agda, Idris, Lean (Kevin Buzzard)
+      Isabelle/HOL
+      Mizar
+      B method
+*)
+
+(* data Day = Monday | Tuesday | Wednesday | ...
+   enum { monday, tuesday, ...} day; *)
+
+Inductive day : Type :=
+  | mon
+  | tue
+  | wed
+  | thu
+  | fri
+  | sat
+  | sun.
+
+Definition szombat : day := sat.
+
+Definition next_weekday (a : day) : day :=
+  match a with
+  | mon => tue
+  | tue => wed
+  | wed => thu
+  | thu => fri
+  | fri => sat
+  | sat => sun
+  | sun => mon
+  end.
+
+(* next_weekday (next_weekday sat) = 
+next_weekday (match sat with
+  | mon => tue
+  | tue => wed
+  | wed => thu
+  | thu => fri
+  | fri => sat
+  | sat => sun
+  | sun => mon
+  end) = 
+next_weekday sun = 
+match sun with
+  | mon => tue
+  | tue => wed
+  | wed => thu
+  | thu => fri
+  | fri => sat
+  | sat => sun
+  | sun => mon
+  end =
+mon
+ *)
+Compute next_weekday (next_weekday sat).
+
+Theorem test_next_weekday : 
+  next_weekday (next_weekday sat) = mon.
+Proof.
+  simpl.
+  reflexivity.
+Qed.
+
+Inductive bool : Type := | true | false.
+
+Definition orb (a b : bool) : bool := 
+  match a with
+  | true => true
+  | false => b
+  end.
+
+Compute orb false true.
+
+Theorem orb_test : orb false true = true.
+Proof.
+  simpl.
+  reflexivity.
+Qed.
+
+Theorem leftid (a : bool) : orb false a = a.
+Proof.
+  simpl.
+  reflexivity.
+Qed.
+
+Theorem rightid (a : bool) : orb a false = a.
+Proof.
+destruct a.
+* simpl. reflexivity.
+* simpl. reflexivity.
+Qed.
+
+Theorem comm : forall (a b : bool), orb a b = orb b a.
+Proof.
+intros.
+destruct a.
+* simpl. destruct b.
+** simpl. reflexivity.
+** simpl. reflexivity.
+* simpl. symmetry. exact (rightid b).
+Qed.
+
+(* 
+orb a false =
+match a with
+  | true => true
+  | false => false
+  end
+*)
+
+(* simpl, unfold, reflexivity, destruct, intros, symmetry, exact *)
+
+
+------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-----------------
+
+
+
+(*Lemma nehez : forall (f : bool -> bool)(x : bool), f (f (f x)) = f x.*)
+Lemma nehez (f : bool -> bool)(x : bool) : f (f (f x)) = f x.
+Proof.
+destruct x.
+* destruct (f true) eqn:H.
+** rewrite -> H. exact H.
+** destruct (f false) eqn:H1.
+**** rewrite -> H. reflexivity.
+**** exact H1.
+* destruct (f false) eqn:H.
+** (* f false = true *) 
+   destruct (f true) eqn:H1.
+*** exact H1.
+*** exact H.
+** (* f false = false *)
+   rewrite -> H. exact H.
+Qed.
+(* HF: ugy leirni, hogy eloszor f true-ra, f false-ra destructolunk, es mindegyik alesetben kulon az x-re. *)
+
+(*
+f :: Bool -> Bool
+f x = f x
+*)
+
+Inductive Nat : Type :=
+  | O : Nat
+  | S : Nat -> Nat. (* S n = n' (diszkret matek jegyzetben) *)
+(* data Nat = O | S Nat  *)
+
+Definition four : Nat := S (S (S (S O))).
+Definition six  : Nat := S (S four).
+
+Definition isOne : Nat -> bool := fun n => match n with
+(* Definition isOne (n : Nat) : bool := match n with *)
+  | O => false
+  | S O => true
+  | S (S n) => false
+  end.
+
+(* fun-nal is *)
+
+Compute isOne four.
+Compute isOne six.
+Compute isOne O.
+Compute isOne (S O).
+
+Fixpoint twice (k : Nat) : Nat := match k with
+  | O => O
+  | S n => S (S (twice n))
+  end.
+
+(*
+twice (S (S (S O))) =
+S (S (twice (S (S O)))     =
+S (S (S (S (twice (S O)         =
+S (S (S (S (S (S (twice O             =
+S (S (S (S (S (S (O
+*)
+Compute twice six.
+
+Eval compute in twice six.
+
+Lemma SStwice : forall (n : Nat),
+  S (S (S (twice n))) = S (twice (S n)).
+(* 3+2*n = 1+2+2*n = 1+2*(1+n) *)
+Proof.
+  intros.
+  simpl.
+  reflexivity.
+Qed.
+
+Fixpoint f (n : Nat) : Nat := match n with
+  | O => O
+  | S n => f n
+  end.
+Definition f' (n : Nat) : Nat := O.
+
+Lemma f'null (a : Nat) : f' a = O.
+Proof. unfold f'. reflexivity. Qed.
+
+Lemma fnull (a : Nat) : f a = O.
+Proof.
+(*
+P O
+minden m-re, ha P m -> P (S m)
+----------------
+minden n-ra P n
+*)
+induction a.
+(*
+P n := (f n = 0)
+1. f 0 = 0
+2. (f m = 0) -> (f (S m) = 0)
+*)
+* simpl. reflexivity.
+* simpl. exact IHa.
+Qed.
+
+(* Fixpoint f (n : Nat) : Nat := f n. *)
+
+(* minden m term. számra létezik olyan s_m:N -> N függvény *)
+Fixpoint plus (m n : Nat) : Nat := match n with
+  | O => m           (* s_m(0)=m *)
+  | S n => S (plus m n) (* nâN-re s_m(n') = (s_m(n))' *)
+  end.
+(*   m+(S n) = m+(1+n) = 1+(m+n) = S(m+n) *)
+
+Compute plus (twice six) (twice four).
+
+Notation "x + y" := (plus x y)
+  (at level 50, left associativity).
+
+(* 4.1.5 tetel (2) *)
+Lemma leftid (n : Nat) : O + n = n.
+Proof. induction n as [|n IH].
+* simpl. reflexivity. (* nyilvánvaló *)
+* simpl. rewrite -> IH. reflexivity. 
+(*        simpl        IH 
+Ekkor 0+n'  =  (0+n)'  =  n' *)
+Qed.
+
+Lemma rightid (n : Nat) : n + O = n.
+Proof. simpl. reflexivity.
+Qed.
+
+(*
+Lemma assoc (a b c : Nat) : (a + b) + c = a + (b + c).
+
+Lemma cong (f : Nat -> Nat)(a b : Nat) : a = b -> f a = f b.
+
+Lemma plus_r_s : forall (a b : Nat), S a + b = a + S b.
+
+Lemma comm (a b : Nat) : a + b = b + a.
+
+Definition pred (n : Nat) : Nat :=
+
+Lemma S_inj (a b : Nat) : S a = S b -> a = b.
+
+Definition P : Nat -> Prop := fun n =>
+
+Lemma O_S_disj (a : Nat) : O <> S a.
+
+Fixpoint times (a b : Nat) : Nat :=
+
+Notation "x * y" := (times x y)
+  (at level 40, left associativity).
+
+Lemma times_leftid (a : Nat) : S O * a = a.
+
+Lemma times_rightid (a : Nat) : a * S O = a.
+
+Lemma times_leftzero (a : Nat) : O * a = O.
+
+Lemma times_rightzero (a : Nat) : a * O = O.
+
+Lemma times_assoc (a b c : Nat) : (a * b) * c = a * (b * c).
+
+Lemma times_comm (a b : Nat) : a * b = b * a.
+
+Fixpoint max (a b : Nat) : Nat :=
+
+Lemma decEq (a b : Nat) : a = b \/ a <> b.
+
+Compute (max four six).
+*)
+(*
+Inductive BinaryTree : Type :=
+| Leaf (n : Nat)
+| Node (l r : BinaryTree).
+*)
+Inductive BinaryTree : Type :=
+| Leaf : Nat -> BinaryTree
+| Node : BinaryTree -> BinaryTree -> BinaryTree.
+(* data BinaryTree = Leaf Nat | Node BinaryTree BinaryTree *)
+(*
+   /\
+  /\ 0
+ 0  1
+*)
+Definition ex : BinaryTree :=
+  Node (Node (Leaf O) (Leaf (S O))) (Leaf O).
+
+(*Fixpoint height (t : BinaryTree) : Nat := *)
+
+Fixpoint leaves_count (t : BinaryTree) : Nat := match t with
+  | Leaf _ => S O
+  | Node t1 t2 => leaves_count t1 + leaves_count t2
+  end.
+
+
+
+Fixpoint sum1 (t : BinaryTree) : Nat :=
+match t with
+| Leaf n => n
+| Node l r => sum1 l + sum1 r
+end.
+
+Fixpoint sum2 (t : BinaryTree) : Nat :=
+match t with
+| Leaf n => n
+| Node l r => sum2 r + sum2 l
+end.
+
+Lemma sum1_2_eq : forall t : BinaryTree, sum1 t = sum2 t.
+
+(* destruct a eqn:H, rewrite ->, induction *)
+
+-------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---------------------
+
+
+
+(*
+Lemma times_comm (a b : Nat) : a * b = b * a.
+*)
+
+(* HF *)
+
+(* Aritmetikai kifejezésnyelv és denotációs szemantika, példa
+   kiértékelések *)
+
+From Coq Require Import Init.Nat.
+
+Check nat.
+
+Check 5.
+
+Compute 1 + 3.
+
+(*a ::= n | a1 + a2 | a1 - a2*)
+(*a ::= alit(n) | plus(a1,a2) | sub(a1,a2)*)
+Inductive AExp : Type :=
+| ALit (n : nat)
+| APlus (a1 a2 : AExp)
+| ASub (a1 a2 : AExp)
+.
+(* objektumnyelv = AExp *)
+(* metanyelv     = Coq*)
+
+(*(1 + 1) + 1, mint AExp, nem egyenlo 1 + (1 + 1) *)
+
+Example notEq : APlus (APlus (ALit 1) (ALit 1)) (ALit 1) <>
+                APlus (ALit 1) (APlus (ALit 1) (ALit 1)) .
+Proof. intro. discriminate. Qed.
+
+Example notEq' : (1 + 1) + 1 = 1 + (1 + 1).
+Proof. simpl. reflexivity. Qed.
+
+Example balId' (n : nat) :  0 + n = n.
+Proof. simpl. reflexivity. Qed.
+
+Example balId : not (forall (a : AExp), APlus (ALit 0) a = a).
+Proof. unfold "~". intro.
+assert (APlus (ALit 0) (ALit 1) = ALit 1).
+apply (H (ALit 1)).
+discriminate H0.
+Qed.
+
+(* HF
+
+forall n, not (S n = n).
+
+Example balIdErdekes : 
+  forall (a : AExp), not (APlus (ALit 0) a = a).
+*)
+
+(* balId : 0 + n = n *)
+
+
+Locate "<>".
+Locate "=".
+Print not. (* not A = A -> False *)
+(* (a <> b) = not (a = b) = (a = b) -> False *)
+
+(*
+A                     bevezeto     eliminalo   (taktikak)
+                      (Goal = A)   (ha A a feltetelek kozott)
+A -> B                intro(s)     apply
+forall (x : A), B     intro(s)     apply
+exists (x : A), B     exists       destruct
+A /\ B                split        destruct
+A \/ B                left,right   destruct
+True                  split        NINCS
+False                 NINCS        destruct
+
+(=                    reflexivity  rewrite)
+
+f : A -> C    exact (f a)
+----------   ----->      KESZ
+C
+    |
+   apply f
+    |
+    v
+f : A -> C
+---------
+A
+
+Goal = A -> B -> C
+    |
+  intros
+    |
+    v
+
+x : A
+y : B
+------------
+Goal = C
+*)
+
+(*
+AExp = {ALit 0, ALit 1, ALit 2, ...
+        APlus (ALit 0) (ALit 0), APlus (ALit 0) (ALit 1), ...
+        ASub (ALit 0) (ALit 0), ASub (ALit 0) (ALit 1), ...,
+        APlus (APlus ? ?) ?,  }
+
+*)
+
+(* Checkek *)
+(* (5 + 7) - 42 *)
+Check (ASub (APlus (ALit 5) (ALit 7)) (ALit 42)).
+
+(*
+Ird le, mint AExp elemet!
+    +
+   / \
+  +   3
+ / \
+1  2
+*)
+Definition t1 : AExp := APlus (APlus (ALit 1) (ALit 2)) (ALit 3).
+
+(*
+Ird le, mint AExp elemet!
+    +
+   / \
+  1   +
+     / \
+    2   3
+*)
+Definition t1' : AExp := APlus (ALit 1) (APlus (ALit 2) (ALit 3)).
+
+(*
+Ird le, mint AExp elemet!
+    +
+   / \
+  3   +
+     / \
+    1  2
+*)
+(*Definition t1'' : AExp := *)
+
+(*
+Ird le, mint AExp elemet!
+     -
+   /  \
+  +    +
+ / \   /\
+1  2  +  3
+     / \
+    4  5
+*)
+(*Definition t2 : AExp := *)
+
+
+(* Rajzold le! *)
+Definition t3 := ASub (APlus (ALit 5) (ALit 7)) (ALit 42).
+Definition t3' := ASub (APlus (ALit 5) (ALit 7)) (ALit 42).
+(*
+t3'
+       -
+       /\
+      /  \
+     +    42
+    /\
+   5  7
+*)
+
+Compute 5 - 15.
+
+(* notation AExp-re is *)
+
+
+(* denotacios szemantika
+   [[_]] : AExp -> nat
+*)
+Fixpoint aeval (a : AExp) : nat :=
+match a with
+ | ALit n => n
+ | APlus a1 a2 => aeval a1 + aeval a2
+ | ASub a1 a2 => aeval a1 - aeval a2
+end.
+
+Lemma nemInj : not (forall a1 a2, aeval a1 = aeval a2 -> a1 = a2).
+Proof. intro.
+assert (APlus (ALit 1) (ALit 2) = APlus (ALit 2) (ALit 1)).
+apply H. simpl. reflexivity. discriminate H0. Qed.
+
+Compute aeval t1.
+
+-------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| APlus (a1 a2 : AExp)
+| ASub (a1 a2 : AExp).
+
+Example pelda : 3 <> 4.
+Proof. unfold not. intro. discriminate H. Qed.
+
+Example pelda' : forall n, n <> S n.
+Proof. intro. induction n.
+- intro. discriminate H.
+- intro. unfold not in IHn. inversion H. apply IHn. exact H1.
+Qed.
+
+(* inversion: induktiv tipusok konstruktorai injektivek *)
+
+Example balIdAExp' : 
+  forall (a : AExp), not (APlus (ALit 0) a = a).
+intro. induction a.
+- intro. discriminate H.
+- intro. inversion H. unfold not in IHa2. apply IHa2. exact H2.
+- intro. discriminate H.
+Qed.
+
+(*
+eddigi taktikak:
+1. unfold, simpl, exact, assert (strukturalis taktikak)
+2. reflexivity, intro(s), split, exists, left, right (bevezeto taktikak: a Goal-tol fog)
+3. rewrite, apply, destruct, induction (eliminacios: feltetelek felhasznalasa)
+4. symmetry, discriminate, inversion, trivial, auto (osszetett, kenyelmi)
+*)
+
+Fixpoint leaves (a : AExp) : nat := match a with
+  | ALit n => 1
+  | APlus a1 a2 => leaves a1 + leaves a2
+  | ASub a1 a2 => leaves a1 + leaves a2
+  end.
+
+Check max.
+Compute max 4 2.
+Fixpoint height (a : AExp) : nat := match a with
+  | ALit _ => 0
+  | APlus a1 a2 => 1 + max (height a1) (height a2)
+  | ASub  a1 a2 => 1 + max (height a1) (height a2)
+  end.
+
+Example expWithProperty : exists (a : AExp),
+  leaves a = 3 /\ height a = 2.
+Proof. exists (APlus (ASub (ALit 1) (ALit 1)) (ALit 1)).
+simpl. split; reflexivity.
+Qed.
+(*  +
+   /\
+   - 1
+  /\
+  1 1
+*)
+
+Example notPoss : 
+  not (exists (a : AExp), leaves a = 2 /\ height a = 0).
+Proof. unfold not. intros. destruct H. destruct H. destruct x.
+- simpl in H. discriminate H.
+- simpl in H. simpl in H0. discriminate H0.
+- simpl in H0. discriminate H0.
+Qed.
+
+Fixpoint aeval (a : AExp) : nat :=
+  match a with
+  | ALit n      => n
+  | APlus a1 a2 => aeval a1 + aeval a2
+  | ASub  a1 a2 => aeval a1 - aeval a2
+  end.
+
+(*  a + 0 = a *)
+Fixpoint optim (a : AExp) : AExp :=
+  match a with
+  | ALit n => ALit n
+  | APlus e1 (ALit 0) => optim e1
+  | APlus e1 e2 => APlus (optim e1) (optim e2)
+  | ASub  e1 e2 => ASub  (optim e1) (optim e2)
+  end.
+
+Compute optim (APlus (APlus (ALit 1) (ALit 0)) (ALit 0)).
+
+Require Import Coq.Arith.Plus.
+Check plus_0_r.
+Lemma optim_sound (a : AExp) :
+  aeval (optim a) = aeval a.
+Proof. induction a.
+- unfold optim. reflexivity.
+- simpl. destruct a2. destruct n.
+-- simpl. rewrite -> IHa1. Check plus_0_r. symmetry. apply plus_0_r.
+-- simpl. rewrite -> IHa1. reflexivity.
+-- simpl. simpl in IHa2. rewrite -> IHa1. rewrite -> IHa2. reflexivity.
+-- simpl. simpl in IHa2. rewrite -> IHa1. rewrite -> IHa2. reflexivity.
+- simpl. rewrite -> IHa1. rewrite -> IHa2. reflexivity.
+Qed.
+
+
+Fixpoint optim' (a : AExp) : AExp :=
+  match a with
+  | ALit n => ALit n
+  | APlus (ALit x) (ALit y) => ALit (x + y)
+  | APlus e1 e2 => APlus (optim' e1) (optim' e2)
+  | ASub  e1 e2 => ASub  (optim' e1) (optim' e2)
+  end.
+(*
+ +
+/\  ---> (a+b)
+a b
+*)
+
+Lemma optim'_sound (a : AExp) : aeval (optim' a) = aeval a.
+Proof. induction a.
+- simpl. reflexivity.
+- simpl. destruct a1; destruct a2;
+  simpl; simpl in IHa1; simpl in IHa2;
+  try (rewrite -> IHa1); try (rewrite -> IHa2); reflexivity.
+- simpl. rewrite -> IHa1. rewrite -> IHa2. reflexivity.
+Qed. 
+
+Definition optim'' a := ALit (aeval a).
+
+Lemma optim''_sound (a : AExp) : aeval (optim'' a) = aeval a.
+Proof. simpl. reflexivity. Qed.
+(*
+ aeval (optim'' a) = aeval (ALit (aeval a)) = (aeval a)
+*)
+
+
+Require Import Nat.
+Require Import Arith.
+
+(* standard library documentation *)
+
+(* See Arith.Le *)
+
+Check Nat.le_refl.
+Check Nat.le_trans.
+Check Nat.le_max_l.
+Check Nat.le_max_r.
+Check Nat.pow_le_mono.
+Check Nat.add_le_mono.
+Lemma leaves_height (a : AExp) : leaves a <= 2 ^ height a.
+
+----------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------
+
+
+
+
+(**
+  Bereczky Péter
+  elerhetoseg: berpeti@inf.elte.hu
+
+  Beadandó végleges infók:
+  - elfogadott/nem elfogadott osztályzás
+  - +2 pont fakultatív feladatokból, de ezeket meg kell védeni!
+
+  Canvas -> gyakorlati anyagok + pre fájlok
+*)
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus.
+
+Definition Ident : Type := string.
+
+(*
+  X := 1;
+  return X;
+
+  let X = 1 in X + 4 --> (X + 4)[1 <- X]
+
+*)
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| APlus (a1 a2 : AExp) (* APlus : AExp -> AExp -> AExp *)
+| ASub (a1 a2 : AExp)
+(** Hogyan lehetne valtozokat reprezentalni? *)
+| AVar (x : Ident)
+.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Definition ex1 : AExp := APlus (AVar X) (AVar Y). (* X + Y *)
+Definition ex2 : AExp := ASub (AVar Z) (AVar Y). (* Z - Y *)
+Definition ex3 : AExp := APlus (ALit 42) (ALit 0). (* 42 + 0 *)
+
+
+Definition State := Ident -> nat.
+
+Definition empty : State := 
+  fun (x : Ident) => 0. (* \x -> 0 *)
+
+
+(** 
+  X |-> 1
+  Y |-> 2
+  Z |-> 42
+*)
+Definition aState := 
+  fun (x : Ident) =>
+    match x with
+    | "X"%string => 1
+    | "Y"%string => 2
+    | "Z"%string => 42
+    | _          => 0
+    end
+  .
+
+(* peldak *)
+Compute empty X.
+Compute empty Y.
+Compute aState Z.
+
+Fixpoint aeval (a : AExp) (s : State) : nat :=
+match a with
+| ALit n => n
+| APlus a1 a2 => aeval a1 s + aeval a2 s
+| ASub a1 a2 => aeval a1 s - aeval a2 s
+(** Hogyan lehet változókat kiértékelni? *)
+| AVar x => s x
+end.
+
+(* peldak *)
+Compute aeval ex1 empty.
+Compute aeval ex1 aState.
+Compute aeval ex2 aState.
+Compute aeval ex1 (fun x => 3).
+
+Search string bool. Print eqb.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun (v : Ident) =>
+    if eqb v x then n else s v
+.
+
+Compute (update empty X 4) X.
+Compute (update empty X 4) Y.
+
+Theorem update_last :
+  forall s x n,
+  (update s x n) x = n.
+Proof.
+  intros. unfold update.
+  Search eqb. rewrite eqb_refl. reflexivity.
+Qed.
+
+(*
+Lemma update_init :
+
+  x <> x' -> (update s x n) x' = s x'.
+Proof.
+
+Qed.
+*)
+
+
+(** Zart kifejezesek <- nem tartalmaz valtozot *)
+Fixpoint bclosed (a : AExp) : bool :=
+match a with
+| ALit n => true
+| APlus a1 a2 => bclosed a1 && bclosed a2
+| ASub a1 a2 => bclosed a1 && bclosed a2
+| AVar x => false
+end.
+
+Example ex1_bclosed : bclosed ex1 = false. Proof. simpl. reflexivity. Qed.
+Example ex2_bclosed : bclosed ex2 = false. Proof. reflexivity. Qed.
+Example ex3_bclosed : bclosed ex3 = true . Proof. reflexivity. Qed.
+
+Lemma bclosed_indep :
+ forall (a : AExp) (s s' : State),
+  bclosed a = true
+ ->
+  aeval a s = aeval a s'.
+Proof.
+  intros. induction a.
+  * simpl. reflexivity.
+  * simpl in H. (* A /\ B hipotezis ---destruct---> A, B hipotezisek *)
+    Search bool "&&" true. apply andb_prop in H.
+    destruct H. simpl. rewrite (IHa1 H), (IHa2 H0). reflexivity.
+  * simpl in H. (* A /\ B hipotezis ---destruct---> A, B hipotezisek *)
+    Search bool "&&" true. apply andb_prop in H.
+    destruct H. simpl. rewrite IHa1, IHa2.
+    - reflexivity.
+    - assumption.
+    - assumption.
+  * simpl in H. Print bool. discriminate H.
+Qed.
+
+(** Zart kifejezesek relacioval definialva *)
+Inductive closed : AExp -> Prop :=
+
+.
+
+Theorem bclosed_iff_closed : .
+
+
+---------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------
+
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus.
+
+Definition Ident : Type := string.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| APlus (a1 a2 : AExp)
+| ASub (a1 a2 : AExp)
+| AVar (s : Ident)
+.
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+
+(** 
+  X |-> 1
+  Y |-> 2
+  Z |-> 42
+*)
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end
+.
+
+
+Fixpoint aeval (a : AExp) (s : State) : nat :=
+match a with
+| ALit n => n
+| APlus a1 a2 => aeval a1 s + aeval a2 s
+| ASub a1 a2 => aeval a1 s - aeval a2 s
+| AVar x => s x
+end.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Definition ex1 : AExp := APlus (AVar X) (AVar Y). (* X + Y *)
+Definition ex2 : AExp := ASub  (AVar Z) (ALit 5). (* Z - 5 *)
+Definition ex3 : AExp := APlus (ALit 666) (ASub (ALit 1) (ALit 3)). (* 666 + (1 - 3) *)
+
+
+Fixpoint bclosed (a : AExp) : bool :=
+match a with
+ | ALit n => true
+ | AVar x => false
+ | APlus a1 a2 => bclosed a1 && bclosed a2
+ | ASub a1 a2 => bclosed a1 && bclosed a2
+end.
+
+(*
+  R ⊆ A x A
+  R ⊆ A₁ x ... x A_n
+
+  R ⊆ AExp
+  { ALit 0, ALit 1, ... , APlus (ALit 1) (ALit 2), ... } <- nem akarjuk leirni az osszes elemet
+
+  R = {
+    ALit n, ∀ n ∈ nat,
+    APlus a1 a2, ahol a1 ∈ R es a2 ∈ R
+    ASub a1 a2, ahol a1 ∈ R es a2 ∈ R
+  }
+*)
+Inductive closed : AExp -> Prop :=
+| closed_lit (n : nat) : closed (ALit n)
+| closed_plus (a1 a2 : AExp) (* (p1 : closed a1)  (p2 : closed a2) *) :
+  closed a1 -> closed a2
+->
+  closed (APlus a1 a2)
+| closed_sub (a1 a2 : AExp) :
+  closed a1 -> closed a2
+->
+  closed (ASub a1 a2)
+.
+
+Check nat_ind.
+Check closed_ind.
+
+Example ex1_closed : ~ closed ex1.
+Proof.
+  Locate "~". Print not.
+  simpl. unfold not. intro.
+  unfold ex1 in H. (* S n = S m -> n = m *)
+  inversion H. subst. inversion H2.
+Qed.
+
+(* Example ex2_closed : . *)
+
+Example ex3_closed : closed ex3.
+Proof.
+  unfold ex3.
+  apply closed_plus.
+  * (* exact (closed_lit 666). *) apply closed_lit.
+  * apply closed_sub.
+    - apply closed_lit.
+    - apply closed_lit.
+Qed.
+
+Theorem closed_state_indep :
+ forall a s s', 
+  closed a
+ ->
+  aeval a s = aeval a s'.
+Proof.
+  intros. simpl. induction a.
+  * simpl. reflexivity.
+  * simpl. inversion H. subst.
+    pose (IHa1 H2). pose (IHa2 H3).
+    (* specialize (IHa1 H2). *) rewrite e, e0. reflexivity.
+  * simpl. inversion H. subst.
+    (* rewrite (IHa1 H2), (IHa2 H3). *) 
+    rewrite IHa1, IHa2. reflexivity. assumption. assumption.
+  * inversion H.
+Qed.
+
+Theorem bclosed_iff_closed :
+  forall (a : AExp), bclosed a = true <-> closed a.
+Proof.
+  Locate "<->". Print iff.
+  split.
+  * intro. induction a.
+    - apply closed_lit.
+    - simpl in H. Search andb eq true. apply andb_prop in H. destruct H.
+      apply closed_plus.
+      + apply IHa1. assumption.
+      + apply IHa2. assumption.
+    - simpl in H. Search andb eq true. apply andb_prop in H. destruct H.
+      apply closed_sub.
+      + apply IHa1. assumption.
+      + apply IHa2. assumption.
+    - simpl in H. discriminate.
+  * intro. induction H.
+    - simpl. reflexivity.
+    - simpl. rewrite IHclosed1. rewrite IHclosed2. simpl. reflexivity.
+    - simpl. rewrite IHclosed1. rewrite IHclosed2. simpl. reflexivity.
+Qed.
+
+
+(** Szemantika tulajdonságok *)
+
+Theorem denot_deterministic : .
+
+(** Kifejezésnyelv természetes szemantikája *)
+Reserved Notation "| a , st | -=> v" := .
+Inductive eval_bigstep := .
+
+Theorem bigstep_deterministic : .
+
+Theorem bigstep_to_denot : .
+
+Theorem denot_to_bigstep : .
+
+------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+------------------------
+
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus
+                        Program.Equality.
+
+Definition Ident : Type := string.
+
+Inductive AExp : Type :=
+| ALit : nat -> AExp
+| AVar (s : Ident)
+| APlus (a1 a2 : AExp).
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun x' =>
+    if eqb x x'
+    then n
+    else s x'.
+
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end
+.
+
+Fixpoint aeval (a : AExp) (s : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => s x
+| APlus a1 a2 => aeval a1 s + aeval a2 s
+end.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Definition ex1 : AExp := APlus (ALit 1) (ALit 2). (* 1 + 2 *)
+Definition ex2 : AExp := APlus  (AVar Z) (ALit 5). (* Z + 5 *)
+Definition ex3 : AExp := APlus (ALit 666) (APlus (ALit 1) (ALit 3)). (* 666 + (1 - 3) *)
+
+(* Big-step szemantika *)
+
+Reserved Notation "| a , st | -=> v" (at level 50).
+(*
+  R = {
+     alapeset1, alapeset2, ...
+     APlus a1 a2, ha a1 ∈ R es a2 ∈ R ...
+  }
+
+*)
+Inductive eval_bigstep : AExp -> State -> nat -> Prop :=
+(*
+   ________________________
+       | n , s | -=> n
+*)
+| beval_lit (n : nat) (s : State) :
+(* ________________________ *)
+     | ALit n , s | -=> n
+
+
+
+(*
+   _______________________
+      | x , s | -=> s x
+*)
+| beval_var (x : Ident) (s : State) :
+  (* ________________________ *)
+      | AVar x, s | -=> s x
+
+
+(*
+  | a1 , s | -=> n1      | a2 , s | -=> n2
+__________________________________________
+     | a1 + a2 , s | -=> n1 + n2
+*)
+| beval_plus (a1 a2 : AExp) (s : State) (n1 n2 : nat) :
+     | a1 , s | -=> n1 -> | a2 , s | -=> n2 ->
+(* _____________________________________________ *)
+        | APlus a1 a2, s | -=> (n1 + n2)
+
+where "| a , st | -=> v" := (eval_bigstep a st v).
+
+Goal | ex1, aState | -=> 3.
+Proof.
+  unfold ex1.
+  (*
+     ____________________ - beval_lit -   ___________________ - beval_lit -
+     | 1, aState | -=> 1                  | 2, aState | -=> 2
+    __________________________________________________________ - beval_plus -
+                    | 1 + 2, aState | -=> 3
+  *)
+  replace 3 with (1 + 2) by reflexivity.
+  apply beval_plus.
+  * apply beval_lit.
+  * apply beval_lit.
+Qed.
+Goal | ex2, aState | -=> 47.
+Proof.
+  unfold ex2. replace 47 with (42 + 5).
+Admitted.
+(* Goal | ex3, aState | -=> 670.
+Proof.
+
+Qed. *)
+
+Theorem bigstep_deterministic : 
+  forall a s n m, | a, s | -=> n -> | a, s | -=> m -> n = m.
+Proof.
+  intros. generalize dependent m. induction H.
+  * (* H <- beval_lit  *) intros. inversion H0. reflexivity.
+  * (* H <- beval_var  *) intros. inversion H0. reflexivity.
+  * (* H <- beval_plus *) intros. inversion H1. subst.
+    pose (IHeval_bigstep1 n0 H4). rewrite e.
+    pose (IHeval_bigstep2 n3 H7). rewrite e0.
+    reflexivity.
+Qed.
+
+Theorem bigstep_to_denot : 
+  forall a s n, | a, s | -=> n -> aeval a s = n.
+Proof.
+ 
+Qed.
+
+Theorem denot_to_bigstep : forall a s n,
+  aeval a s = n -> | a, s | -=> n.
+Proof.
+  
+Qed.
+
+(* Small-step szemantika *)
+Reserved Notation "| a , st | => v" (at level 50).
+Inductive eval_smallstep : AExp -> State -> AExp -> Prop :=
+
+
+where "| a , st | => v" := (eval_smallstep a st v).
+
+Goal | ex1, aState | => ALit 3.
+Proof.
+
+Qed.
+Goal | ex2, aState | => ALit 47.
+Proof.
+  (* sounds good, doesn't work *)
+Abort.
+
+Reserved Notation "| a , st | =>* v" (at level 50).
+Inductive eval_smallstep_rst : AExp -> State -> AExp -> Prop := 
+
+where "| a , st | =>* v" := (eval_smallstep_rst a st v).
+
+Goal | ex1, aState | =>* ALit 3.
+Proof.
+
+Qed.
+Goal | ex2, aState | =>* ALit 47.
+Proof.
+
+Qed.
+Goal | ex3, aState | =>* ALit 670.
+Proof.
+
+Qed.
+
+Theorem smallstep_deterministic : forall a s v1 v2,
+  | a, s | => v1 -> | a, s | => v2 -> v1 = v2.
+Proof.
+
+Qed.
+
+Theorem smallstep_rst_deterministic : forall a s n m,
+  | a, s | =>* ALit n -> | a, s | =>* ALit m -> n = m.
+Proof.
+
+Qed.
+
+
+--------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------------------------------
+
+
+
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus
+                        Program.Equality.
+
+Definition Ident : Type := string.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| AVar (s : Ident)
+| APlus (a1 a2 : AExp).
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun x' =>
+    if eqb x x'
+    then n
+    else s x'.
+
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end
+.
+
+Fixpoint aeval (a : AExp) (s : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => s x
+| APlus a1 a2 => aeval a1 s + aeval a2 s
+end.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Definition ex1 : AExp := APlus (ALit 1) (ALit 2). (* 1 + 2 *)
+Definition ex2' : AExp := APlus (APlus (ALit 1) (AVar Z)) (ALit 5). (* (1 + Z) + 5 *)
+Definition ex2 : AExp := APlus  (AVar Z) (ALit 5). (* Z + 5 *)
+Definition ex3 : AExp := APlus (ALit 666) (APlus (ALit 1) (ALit 3)). (* 666 + (1 - 3) *)
+
+(* Small-step szemantika *)
+Reserved Notation "| a , st | => v" (at level 50).
+(*
+  aState: Z <- 42
+
+  Z + 5 => 42 + 5 => 47
+                     ^-- vegeredmeny, ertek (value), "legegyszerubb kifejezes", normalforma
+                         kanonikus alak
+  Z + 5 =>* 47
+
+  Z + Z => 42 + Z => 42 + 42 => 84 <- balrol jobbra tortenik a kiertekeles
+  (
+    lehetne nemdeterminisztikusan is
+    Z + Z => Z + 42 => 42 + 42 => 84
+
+    pl. Core Erlang specifikacioja nemdet.:
+    let <_0> = Z in let <_1> = Z in _0 + _1
+  )
+
+  Z + Z =>* 84
+  Z + Z =>* 42 + 42
+  Z + Z =>* 42 + Z
+  Z + Z =>* Z + Z
+
+  (1 + 2) + 3
+*)
+Inductive eval_smallstep : AExp -> State -> AExp -> Prop :=
+(*
+  _________________________ seval_var
+      | x, s | => s x
+*)
+| seval_var (x : Ident) (s : State) :
+  | AVar x, s | => ALit (s x)
+
+(*
+          | a1, s | => a1'
+  _________________________________ seval_plus_lhs
+    | a1 + a2, s | => a1' + a2
+*)
+| seval_plus_lhs (a1 a1' a2 : AExp) (s : State) :
+  | a1, s | => a1'
+->
+  | APlus a1 a2, s | => APlus a1' a2
+
+(*
+        | a2, s | => a2'
+  _________________________________ seval_plus_rhs
+     | n + a2, s | => a1 + a2'
+*)
+| seval_plus_rhs (a2 a2' : AExp) (n : nat) (s : State) :
+  | a2, s | => a2'
+->
+  | APlus (ALit n) a2, s | => APlus (ALit n) a2'
+(*            ^---- !!!!! kiertekelis sorrend    *)
+
+(*
+  __________________________________ seval_plus_add
+      | n + m, s | => Nat.add n m
+*)
+| seval_plus_add (n m : nat) (s : State) :
+  | APlus (ALit n) (ALit m), s | => ALit (n + m)
+
+(* Nem lesz ilyen szabaly:
+   ________________
+    | n, s | => n
+
+  igy lehetne: 
+  42 => 42 => 42 => 42 => 42 ...
+*)
+
+where "| a , st | => v" := (eval_smallstep a st v).
+
+Goal | ex1, aState | => ALit 3.
+Proof.
+  unfold ex1.
+  apply seval_plus_add.
+Qed.
+Goal | ex2, aState | => ALit 47.
+Proof.
+  unfold ex2.
+  (* sounds good, doesn't work *)
+Abort.
+
+
+Reserved Notation "| a , st | =>* v" (at level 50).
+(*
+  a =>* a' : a valahany (akar 0) lepesben atirodik a'-re
+*)
+Inductive eval_smallstep_rst : AExp -> State -> AExp -> Prop := 
+
+| seval_refl (a : AExp) (s : State) :
+  | a, s | =>* a
+
+| seval_trans (a a' a'' : AExp) (s : State) :
+  | a, s | => a' -> | a', s | =>* a''
+->
+  | a, s | =>* a''
+
+where "| a , st | =>* v" := (eval_smallstep_rst a st v).
+
+Goal | ex1, aState | =>* ALit 3.
+Proof.
+  unfold ex1.
+  (* apply (seval_trans _ (ALit 3)). *)
+  apply seval_trans with (a' := ALit 3).
+  * apply seval_plus_add.
+  * apply seval_refl.
+  (* 1 + 2 =>* 3
+     1 + 2 =>  3 
+   *)
+Qed.
+Goal | ex2', aState | =>* ALit 48.
+Proof.
+  unfold ex2'.
+  apply seval_trans with (a' := APlus (APlus (ALit 1) (ALit 42)) (ALit 5)).
+  * apply seval_plus_lhs. apply seval_plus_rhs. apply seval_var.
+      (* (1 + Z) + 5 => (1 + 42) + 5 *)
+  * apply seval_trans with (a' := APlus (ALit 43) (ALit 5)).
+    - apply seval_plus_lhs. apply seval_plus_add. (* (1 + 42) + 5 => 43 + 5 *)
+    - apply seval_trans with (a' := ALit 48).
+      + apply seval_plus_add. (* 43 + 5 => 48 *)
+      + apply seval_refl.
+Qed.
+Goal | ex3, aState | =>* ALit 670.
+Proof.
+
+Admitted.
+
+Theorem progress :
+  forall a s, (exists n, a = ALit n) \/ (exists a', | a, s | => a').
+Proof.
+  intros. destruct a.
+  * left. exists n. reflexivity.
+  * right. exists (ALit (s s0)). apply seval_var.
+  * 
+Qed.
+
+Theorem smallstep_deterministic : forall a s v1 v2,
+  | a, s | => v1 -> | a, s | => v2 -> v1 = v2.
+Proof.
+
+Admitted.
+
+Theorem smallstep_rst_deterministic : forall a s n m,
+  | a, s | =>* ALit n -> | a, s | =>* ALit m -> n = m.
+Proof.
+
+Admitted.
+
+Inductive BExp : Type :=
+
+.
+
+Inductive Stmt : Type :=
+
+.
+-------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---------------------
+
+
+
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus
+                        Program.Equality.
+Require Import Coq.Logic.FunctionalExtensionality.
+
+Definition Ident : Type := string.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun x' =>
+    if eqb x x'
+    then n
+    else s x'.
+
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end
+.
+
+Module small_step.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| AVar (s : Ident)
+| APlus (a1 a2 : AExp).
+
+Fixpoint aeval (a : AExp) (s : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => s x
+| APlus a1 a2 => aeval a1 s + aeval a2 s
+end.
+
+Definition ex1 : AExp := APlus (ALit 1) (ALit 2). (* 1 + 2 *)
+Definition ex2 : AExp := APlus (AVar Z) (ALit 5).
+Definition ex2' : AExp := APlus (APlus (ALit 1) (AVar Z)) (ALit 5). (* (1 + Z) + 5 *)
+Definition ex3 : AExp := APlus (ALit 666) (APlus (ALit 1) (ALit 3)). (* 666 + (1 - 3) *)
+
+(* Small-step szemantika *)
+Reserved Notation "| a , st | => v" (at level 50).
+(*
+  vegeredmeny ≈ ertek ≈ normalforma : szamliteralok (term. szamok)
+
+  Kiertekelesi sorrend: balrol jobbra
+
+  aState : Z <- 42
+  Z + 5 => 42 + 5 => 47
+
+  Z + Z => 42 + Z => 42 + 42 => 84
+
+  Z + Z =>* 84
+  Z + Z =>* Z + Z
+  Z + Z =>* 42 + 42
+
+  (1 + 2) + (3 + 4) => 3 + (3 + 4) => 3 + 7 => 10
+  (Z + 2) + (3 + 4) => (42 + 2) + (3 + 4) => ...
+*)
+Inductive eval_smallstep : AExp -> State -> AExp -> Prop :=
+(*
+  ________________________ seval_var
+     | x, s | => s x
+*)
+| seval_var (x : Ident) (s : State) :
+  | AVar x , s | => ALit (s x)
+
+(*
+Plus-hoz 3 szabaly is kell:
+         | a1, s | => a1'
+  _________________________________ seval_plus_lhs
+     | a1 + a2, s | => a1' + a2
+*)
+| seval_plus_lhs (a1 a2 a1' : AExp) (s : State) :
+  | a1, s | => a1'
+->
+  | APlus a1 a2, s | => APlus a1' a2
+
+(*
+         | a2, s | => a2'
+  ____________________________________ seval_plus_rhs
+    | n + a2, s | => n + a2'
+*)
+| seval_plus_rhs (a2 a2' : AExp) (n : nat) (s : State) :
+  | a2, s | => a2'
+->
+  | APlus (ALit n) a2, s | => APlus (ALit n) a2'
+
+(*
+
+  _____________________________________ seval_plus_add
+       | n + m, s | => Nat.add n m
+*)
+| seval_plus_add (n m : nat) (s : State) :
+  | APlus (ALit n) (ALit m), s | => ALit (n + m)
+
+
+(*
+  5 => 5 => 5 => 5 => 5 => 5 => 5 => 5 ...., ha lenne szabaly literal kiertekelesere:
+  ___________________________
+    | n, s | => n
+
+  Emiatt nincs szabaly a literal kiertekelesere
+*)
+
+where "| a , st | => v" := (eval_smallstep a st v).
+
+Goal | ex1, aState | => ALit 3.
+Proof.
+  unfold ex1.
+  apply seval_plus_add.
+Qed.
+Goal | ex2, aState | => APlus (ALit 42) (ALit 5).
+Proof.
+  unfold ex2.
+  apply seval_plus_lhs. apply seval_var.
+Qed.
+Goal | ex2, aState | => ALit 47.
+Proof.
+  unfold ex2.
+  (* sounds good, doesn't work *)
+Abort.
+
+
+Reserved Notation "| a , st | =>* v" (at level 50).
+Inductive eval_smallstep_rst : AExp -> State -> AExp -> Prop :=
+
+| seval_refl (a : AExp) (s : State) :
+  | a, s | =>* a
+
+| seval_trans (a a' a'' : AExp) (s : State) :
+  | a, s | => a' (* !!! egy lepesben *)  -> 
+  | a', s | =>* a''
+->
+  | a, s | =>* a''
+
+where "| a , st | =>* v" := (eval_smallstep_rst a st v).
+
+Goal | APlus (AVar X) (APlus (ALit 1) (ALit 2)), aState | =>* ALit 4.
+Proof.
+(* END FIX *)
+  eapply seval_trans (* with (a' := APlus (ALit 1) (APlus (ALit 1) (ALit 2))) *) .
+  * apply seval_plus_lhs. apply seval_var.
+  * simpl. apply seval_trans with (a' := APlus (ALit 1) (ALit 3)).
+    - apply seval_plus_rhs. apply seval_plus_add.
+    - apply seval_trans with (a' := ALit 4).
+      + apply seval_plus_add.
+      + apply seval_refl.
+Qed.
+
+Theorem progress :
+  forall a s, (exists n, a = ALit n) \/ (exists a', | a, s | => a').
+Proof.
+  intros. induction a.
+  * left. exists n. reflexivity.
+  * right. exists (ALit (s s0)). apply seval_var.
+  * right. destruct IHa1.
+    - destruct H. subst. destruct IHa2.
+      + destruct H. subst. exists (ALit (x + x0)). apply seval_plus_add.
+      + destruct H. exists (APlus (ALit x) x0). apply seval_plus_rhs. assumption.
+    - destruct H. exists (APlus x a2). apply seval_plus_lhs. assumption.
+Qed.
+
+Theorem smallstep_deterministic : forall a s v1 v2,
+  | a, s | => v1 -> | a, s | => v2 -> v1 = v2.
+Proof.
+  intros. generalize dependent v2. induction H; intros.
+  * inversion H0. reflexivity.
+  * inversion H0; subst.
+    - specialize (IHeval_smallstep a1'0 H5). rewrite IHeval_smallstep. reflexivity.
+    - inversion H.
+    - inversion H.
+  * inversion H0; subst.
+    - inversion H5.
+    - specialize (IHeval_smallstep a2'0 H5). rewrite IHeval_smallstep. reflexivity.
+    - inversion H.
+  * inversion H0; subst.
+    - inversion H4.
+    - inversion H4.
+    - reflexivity.
+Qed.
+
+Theorem smallstep_rst_deterministic : forall a s n m,
+  | a, s | =>* ALit n -> | a, s | =>* ALit m -> n = m.
+Proof.
+  (* levezetesi lanc hossza szerinti indukcio: 
+    - 0 hosszu lancra teljesul                             = seval_refl
+    - k + 1 hosszu lancra teljesul, ha teljesul k hosszura = seval_trans
+  *)
+  intros. generalize dependent m. dependent induction H; intros.
+  * inversion H0; subst.
+    - reflexivity.
+    - inversion H.
+  * assert (ALit n = ALit n). { reflexivity. }
+    specialize (IHeval_smallstep_rst n H2).
+    inversion H1; subst.
+    - inversion H.
+    - pose (smallstep_deterministic a s a' a'0 H H3). rewrite e in *.
+      specialize (IHeval_smallstep_rst m H4). assumption.
+Qed.
+
+End small_step.
+
+Module stmt.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| AVar (x : Ident)
+| APlus (a1 a2 : AExp)
+| AMinus (a1 a2 : AExp)
+| AMult (a1 a2 : AExp).
+
+Inductive BExp : Type :=
+(* true, false, and, not, eq, le *)
+
+.
+
+Fixpoint aeval (a : AExp) (st : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => st x
+| APlus a1 a2 => (aeval a1 st) + (aeval a2 st)
+| AMinus a1 a2 => (aeval a1 st) - (aeval a2 st)
+| AMult a1 a2 => (aeval a1 st) * (aeval a2 st)
+end.
+
+Fixpoint beval (b : BExp) (s : State) : bool :=
+(* Ha szeretnenk elagazast/ciklust, kell a logikai kifejezesek denot. szemantikaja *)
+
+.
+
+Inductive Stmt : Type :=
+
+.
+
+Fixpoint eval (S : Stmt) (st : State) : State :=
+
+.
+(* FIX F
+   F = cond(B[[b]], g. Sds[[S0]]), idState *)
+
+Definition stmt1 : Stmt :=
+Definition stmt2 : Stmt :=
+Definition inf_iter : Stmt :=
+
+Compute eval stmt1 empty 0.
+Compute eval stmt1 empty 100.
+Compute eval stmt1 aState 100.
+Compute eval stmt2 empty 100.
+Compute eval stmt2 aState 100.
+
+Theorem while_unfolding : forall b S0 s n,
+  eval (SWhile b S0) s n = eval (SIf b (SSeq S0 (SWhile b S0)) SSkip) s (S n).
+Proof.
+  
+Qed.
+
+End stmt.
+
+--------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus
+                        Program.Equality.
+Require Import Coq.Logic.FunctionalExtensionality.
+
+Definition Ident : Type := string.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun x' =>
+    if eqb x x'
+    then n
+    else s x'.
+
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end
+.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| AVar (x : Ident)
+| APlus (a1 a2 : AExp)
+| AMinus (a1 a2 : AExp)
+| AMult (a1 a2 : AExp).
+
+Inductive BExp : Type :=
+(* true, false, and, not, eq, le *)
+| BTrue
+| BFalse
+(* alt. verzio: | BAtom (b : bool) *)
+| BAnd (b1 b2 : BExp)  (* true and false *)
+| BNot (b : BExp)  (* not false *)
+| BEq (a1 a2 : AExp)  (* 1 == 2 *)
+| BLe (a1 a2 : AExp)  (* 2 <= 5 *).
+
+Fixpoint aeval (a : AExp) (st : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => st x
+| APlus a1 a2 => (aeval a1 st) + (aeval a2 st)
+| AMinus a1 a2 => (aeval a1 st) - (aeval a2 st)
+| AMult a1 a2 => (aeval a1 st) * (aeval a2 st)
+end.
+
+Locate "&&". Print andb.
+Locate "~". Check not.
+Search bool.
+Locate "=?".
+Locate "<=?".
+Locate "<=".
+
+Compute 1 <=? 1.
+Compute 1 <= 1.
+
+Fixpoint beval (b : BExp) (s : State) : bool :=
+(* Ha szeretnenk elagazast/ciklust, kell a logikai kifejezesek denot. szemantikaja *)
+match b with
+| BTrue => true
+| BFalse => false
+| BAnd b1 b2 => (beval b1 s) && (beval b2 s)
+| BNot b => negb (beval b s)
+| BEq a1 a2 => (* Nat.eqb *) (aeval a1 s) =? (aeval a2 s)
+| BLe a1 a2 => (* Nat.leb *) (aeval a1 s) <=? (aeval a2 s)
+end.
+
+Inductive Stmt : Type :=
+| SSkip (* skip *)
+| SAssign (x : Ident) (a : AExp) (* x := a *)
+| SSeq (S1 S2 : Stmt) (* S1; S2 *)
+| SIf (b : BExp) (S1 S2 : Stmt) (* if b then S1 else S2 *)
+| SWhile (b : BExp) (S0 : Stmt) (* while b do S0 end *).
+
+(* X := 1; Y := 2 *)
+Definition stmt1 : Stmt := SSeq (SAssign X (ALit 1))
+                                (SAssign Y (ALit 2)).
+
+(*
+  X := 0; Y := 0;
+  while X <= 10 
+  do 
+    Y := Y + X;
+    X := X + 1
+  end
+*)
+Definition stmt2 : Stmt :=
+  SSeq (SAssign X (ALit 0))
+       (SSeq (SAssign Y (ALit 0))
+             (SWhile (BLe (AVar X) (ALit 10))
+                     (SSeq (SAssign Y (APlus (AVar Y) (AVar X)))
+                           (SAssign X (APlus (AVar X) (ALit 1)))
+                     )
+             )
+       ).
+
+(*
+  while true do skip end
+*)
+Definition inf_iter : Stmt := SWhile BTrue SSkip.
+(*
+  while true do X := X + 1 end
+*)
+Definition inf_iter2 : Stmt := SWhile BTrue (SAssign X (APlus (AVar X) (ALit 1))).
+
+(** kompozicionalitas!! *)
+Fixpoint eval (S0 : Stmt) (st : State) (fuel : nat) : State :=
+match fuel with
+| 0 => st
+| S fuel' =>
+  match S0 with
+  | SSkip => st
+  | SAssign x a => update st x (aeval a st)
+  | SSeq S1 S2 => eval S2 (eval S1 st fuel') fuel'
+                                     (* let st' := eval S1 st in
+                                             eval S2 st' *)
+  | SIf b S1 S2 => (* match beval b st with
+                   | true => ....
+                   | false => ....
+                   end *)
+                   if beval b st
+                   then eval S1 st fuel'
+                   else eval S2 st fuel'
+  (* while b do S end ≡ if b then S; while b do S else skip *)
+  | SWhile b S0 => if beval b st
+                   then eval (SWhile b S0) (eval S0 st fuel') fuel'
+                   else st
+  end
+end.
+(* FIX F
+   F = cond(B[[b]], g. Sds[[S0]], idState) *)
+
+Compute eval stmt1 empty 0 Y.
+Compute eval stmt1 empty 100 Y.
+Compute eval stmt1 aState 100 Z.
+Compute eval stmt2 empty 1000 Y.
+Compute eval stmt2 empty 6 Y.
+Compute eval stmt2 aState 100.
+
+Theorem while_unfolding : forall b S0 s n,
+  eval (SWhile b S0) s n = eval (SIf b (SSeq S0 (SWhile b S0)) SSkip) s (S n).
+Proof.
+
+Qed.
+
+Reserved Notation "| s , st | -=> st' " (at level 50).
+Inductive eval_bigstep : Stmt -> State -> State -> Prop :=
+
+where "| s , st | -=> st' " := (eval_bigstep s st st').
+
+------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------
+
+
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus
+                        Program.Equality.
+Require Import Coq.Logic.FunctionalExtensionality.
+
+Definition Ident : Type := string.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Lemma X_neq_Y : (X =? Y)%string = false.
+Proof.
+  apply eqb_neq. intro. inversion H.
+Qed.
+
+Lemma Y_neq_X : (Y =? X)%string = false.
+Proof.
+  apply eqb_neq. intro. inversion H.
+Qed.
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun x' =>
+    if eqb x x'
+    then n
+    else s x'.
+
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| AVar (x : Ident)
+| APlus (a1 a2 : AExp)
+| AMinus (a1 a2 : AExp)
+| AMult (a1 a2 : AExp).
+
+Inductive BExp : Type :=
+| BFalse
+| BTrue
+| BAnd (b1 b2 : BExp)
+| BNot (b : BExp)
+| BEq (a1 a2 : AExp)
+| BLe (a1 a2 : AExp).
+
+Fixpoint aeval (a : AExp) (st : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => st x
+| APlus a1 a2 => (aeval a1 st) + (aeval a2 st)
+| AMinus a1 a2 => (aeval a1 st) - (aeval a2 st)
+| AMult a1 a2 => (aeval a1 st) * (aeval a2 st)
+end.
+
+Fixpoint beval (b : BExp) (s : State) : bool :=
+match b with
+| BFalse => false
+| BTrue => true
+| BAnd b1 b2 => beval b1 s && beval b2 s
+| BNot b => negb (beval b s)
+| BEq a1 a2 => (aeval a1 s) =? (aeval a2 s)
+| BLe a1 a2 => (aeval a1 s) <=? (aeval a2 s)
+end.
+
+Inductive Stmt : Type :=
+| SSkip (* skip *)
+| SAssign (x : Ident) (a : AExp) (* x := a *)
+| SSeq (S1 S2 : Stmt) (* S1 ; S2 *)
+| SIf (b : BExp) (S1 S2 : Stmt) (* if b then S1 else S2 *)
+| SWhile (b : BExp) (S0 : Stmt) (* while b do S0 end *).
+
+(* X := 1; Y := X *)
+Definition stmt1 : Stmt := SSeq (SAssign X (ALit 1)) (SAssign Y (AVar X)).
+(* X := 0; while X <= 6 do X := X + 1 end *)
+Definition stmt2 : Stmt := SSeq (SAssign X (ALit 0))
+                                (SWhile (BLe (AVar X) (ALit 6))
+                                        (SAssign X (APlus (AVar X) (ALit 1)))
+                                ).
+(*
+  X := 0; Y := 0;
+  while X <= 2 
+  do 
+    Y := Y + X;
+    X := X + 1
+  end
+*)
+Definition stmt3 : Stmt :=
+  SSeq (SAssign X (ALit 0))
+       (SSeq (SAssign Y (ALit 0))
+             (SWhile (BLe (AVar X) (ALit 2))
+                     (SSeq (SAssign Y (APlus (AVar Y) (AVar X)))
+                           (SAssign X (APlus (AVar X) (ALit 1)))
+                     )
+             )
+       ).
+(* while true do skip *)
+Definition inf_iter : Stmt := SWhile BTrue SSkip.
+
+Reserved Notation "| s , st | -=> st' " (at level 50).
+Inductive eval_bigstep : Stmt -> State -> State -> Prop :=
+
+(*
+  ___________________________
+    | skip, st | -=> st
+*)
+| eval_skip (st : State) :
+  | SSkip, st | -=> st
+
+(*
+  _________________________________________
+    | x := a, st | -=> st[ x <- [[a]]st ]
+*)
+| eval_assign (x : Ident) (a : AExp) (st : State):
+  | SAssign x a, st | -=> update st x (aeval a st)
+
+(*
+    | S1, st | -=> st'     | S2, st' | -=> st''
+  ______________________________________________
+             | S1; S2, st | -=> st''
+*)
+| eval_seq (S1 S2 : Stmt) (st st' st'' : State) :
+  | S1, st | -=> st' -> | S2, st' | -=> st''
+->
+  | SSeq S1 S2, st | -=> st''
+
+(*
+     [[b]]st = true        | S1, st | -=> st'
+   ____________________________________________
+     | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_true (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = true -> | S1, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+     [[b]]st = false        | S2, st | -=> st'
+   ____________________________________________
+     | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_false (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = false -> | S2, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+    [[b]]st = true     | S0, st | -=> st'       | while b do S0 end, st' | -=> st''
+  _____________________________________________________________________________________
+                         | while b do S0 end, st | -=> st''
+*)
+| eval_while_true (b : BExp) (S0 : Stmt) (st st' st'' : State):
+  beval b st = true -> | S0, st | -=> st' -> | SWhile b S0, st' | -=> st''
+->
+  | SWhile b S0, st | -=> st''
+
+(*
+            [[b]]st = false
+  ____________________________________
+   | while b do S0 end, st | -=> st
+*)
+| eval_while_false (b : BExp) (S0 : Stmt) (st : State):
+  beval b st = false
+->
+  | SWhile b S0, st | -=> st
+
+where "| s , st | -=> st' " := (eval_bigstep s st st').
+(*
+  while b do S0 end ≡ if b
+                      then S0; while b do S0 end
+                      else skip
+*)
+
+Goal exists st, | stmt1, empty | -=> st.
+Proof.
+  unfold stmt1.
+(*
+ ____________________________________  eval_assign    ____________________________________________________ eval_assign
+ | X := 1, empty | -=> empty[X <- 1]                   | Y := X, empty[X <- 1] | -=> empty[X <- 1, Y <- 1]
+____________________________________________________________________________________________________ eval_seq
+                  | X := 1; Y := X , empty | -=> empty[X <- 1, Y <- 1]
+*)
+  exists (update (update empty X 1) Y 1).
+  apply eval_seq with (st' := update empty X 1).
+  * apply eval_assign.
+  * apply eval_assign.
+Qed.
+
+(* Kulonbozo, tovabbi kiertekelesi lehetosegek: *)
+Goal forall st, | stmt1, empty | -=> st -> st X = 1 /\ st Y = 1.
+Proof.
+  intros.
+  unfold stmt1 in H.
+  inversion H. subst.
+  inversion H2. subst. simpl in *.
+  inversion H5. subst. simpl in *. (* cbn in *. *)
+  unfold update. simpl. split; reflexivity.
+Qed.
+
+(* Goal exists st, | stmt1, empty | -=> st /\ st X = 1 /\ st Y = 1.
+Proof.
+
+Admitted. *)
+
+Goal forall st, exists st', | stmt1, st | -=> st'.
+Proof.
+  intros.
+  exists (update (update st X 1) Y 1).
+  apply eval_seq with (st' := update st X 1).
+  * apply eval_assign.
+  * apply eval_assign.
+Qed.
+
+Goal exists st, | stmt3, aState | -=> st.
+Proof.
+  unfold stmt3.
+(*
+  X := 0; Y := 0;
+  while X <= 2 
+  do 
+    Y := Y + X;
+    X := X + 1
+  end
+*)
+  exists (update (update aState X 3) Y 3).
+  (* eexists. *)
+  Check functional_extensionality.
+  eapply eval_seq.
+  * apply eval_assign.
+  * simpl. eapply eval_seq.
+    - apply eval_assign.
+    - simpl. eapply eval_while_true.
+      + simpl. reflexivity.
+      + 
+Admitted.
+
+---------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------------------
+
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus
+                        Program.Equality.
+Require Import Coq.Logic.FunctionalExtensionality.
+
+Definition Ident : Type := string.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Lemma X_neq_Y : (X =? Y)%string = false.
+Proof.
+  apply eqb_neq. intro. inversion H.
+Qed.
+
+Lemma Y_neq_X : (Y =? X)%string = false.
+Proof.
+  apply eqb_neq. intro. inversion H.
+Qed.
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun x' =>
+    if eqb x x'
+    then n
+    else s x'.
+
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| AVar (x : Ident)
+| APlus (a1 a2 : AExp)
+| AMinus (a1 a2 : AExp)
+| AMult (a1 a2 : AExp).
+
+Inductive BExp : Type :=
+| BFalse
+| BTrue
+| BAnd (b1 b2 : BExp)
+| BNot (b : BExp)
+| BEq (a1 a2 : AExp)
+| BLe (a1 a2 : AExp).
+
+Fixpoint aeval (a : AExp) (st : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => st x
+| APlus a1 a2 => (aeval a1 st) + (aeval a2 st)
+| AMinus a1 a2 => (aeval a1 st) - (aeval a2 st)
+| AMult a1 a2 => (aeval a1 st) * (aeval a2 st)
+end.
+
+Fixpoint beval (b : BExp) (s : State) : bool :=
+match b with
+| BFalse => false
+| BTrue => true
+| BAnd b1 b2 => beval b1 s && beval b2 s
+| BNot b => negb (beval b s)
+| BEq a1 a2 => (aeval a1 s) =? (aeval a2 s)
+| BLe a1 a2 => (aeval a1 s) <=? (aeval a2 s)
+end.
+
+Inductive Stmt : Type :=
+| SSkip (* skip *)
+| SAssign (x : Ident) (a : AExp) (* x := a *)
+| SSeq (S1 S2 : Stmt) (* S1 ; S2 *)
+| SIf (b : BExp) (S1 S2 : Stmt) (* if b then S1 else S2 *)
+| SWhile (b : BExp) (S0 : Stmt) (* while b do S0 end *).
+
+(* X := 1; Y := X *)
+Definition stmt1 : Stmt := SSeq (SAssign X (ALit 1)) (SAssign Y (AVar X)).
+(* X := 0; while X <= 6 do X := X + 1 end *)
+Definition stmt2 : Stmt := SSeq (SAssign X (ALit 0))
+                                (SWhile (BLe (AVar X) (ALit 6))
+                                        (SAssign X (APlus (AVar X) (ALit 1)))
+                                ).
+(*
+  X := 0; Y := 0;
+  while X <= 2 
+  do 
+    Y := Y + X;
+    X := X + 1
+  end
+*)
+Definition stmt3 : Stmt :=
+  SSeq (SAssign X (ALit 0))
+       (SSeq (SAssign Y (ALit 0))
+             (SWhile (BLe (AVar X) (ALit 2))
+                     (SSeq (SAssign Y (APlus (AVar Y) (AVar X)))
+                           (SAssign X (APlus (AVar X) (ALit 1)))
+                     )
+             )
+       ).
+(* while true do skip *)
+Definition inf_iter : Stmt := SWhile BTrue SSkip.
+
+Reserved Notation "| s , st | -=> st' " (at level 50).
+Inductive eval_bigstep : Stmt -> State -> State -> Prop :=
+
+(*
+  ________________________
+    | skip, st | -=> st
+*)
+| eval_skip (st : State) :
+  | SSkip , st | -=> st
+
+(*
+  __________________________
+   | x := a, st | -=> st[ x <- [[a]]st ]
+*)
+| eval_assign (x : Ident) (a : AExp) (st : State) :
+  | SAssign x a, st | -=> update st x (aeval a st)
+
+(*
+   | S1, st | -=> st'      | S2, st' | -=> st''
+  _______________________________________________
+             | S1; S2, st | -=> st''
+*)
+| eval_seq (S1 S2 : Stmt) (st st' st'' : State) :
+  | S1, st | -=> st' -> | S2, st' | -=> st''
+->
+  | SSeq S1 S2, st | -=> st''
+
+(*
+    [[b]]st = true       | S1, st | -=> st'
+  _____________________________________________
+      | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_true (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = true -> | S1, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+    [[b]]st = false      | S2, st | -=> st'
+  _____________________________________________
+   | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_false (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = false -> | S2, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+
+  while b do S0 end ≡ if b
+                      then S0; while b do S0 end
+                      else skip
+
+
+   [[b]]st = true     | S0, st | -=> st'     | while b do S0 end, st' | -=> st''
+  _______________________________________________________________________________
+                      | while b do S0 end, st | -=> st''
+*)
+| eval_while_true (b : BExp) (S0 : Stmt) (st st' st'' : State) :
+  beval b st = true -> | S0, st | -=> st' -> | SWhile b S0, st' | -=> st''
+->
+  | SWhile b S0, st | -=> st''
+
+(*
+               [[b]]st = false
+   ____________________________________
+     | while b do S0 end, st | -=> st
+*)
+| eval_while_false (b : BExp) (S0 : Stmt) (st : State) :
+  beval b st = false
+->
+  | SWhile b S0, st | -=> st
+
+where "| s , st | -=> st' " := (eval_bigstep s st st').
+
+(* Vegul konnyebb pelda (+/- szintu) *)
+(* BEGIN FIX *)
+Definition stmt4 (n1 n2 n3 : nat) : Stmt := SSeq (SAssign X (ALit n1))
+                                                 (SIf (BLe (AVar X) (ALit n2))
+                                                      (SAssign X (APlus (ALit n3) (AVar X)))
+                                                      SSkip).
+
+(* BEGIN FIX *)
+Goal forall st, | stmt4 7 2 3, empty | -=> st -> st X = 7.
+Proof.
+(* END FIX *)
+(* Tipp: SIf felbontasanal az egyik agon ellentmondasra kell jutni (javaslom a simpl in * taktikat) *)
+  unfold stmt4.
+  intros.
+  inversion H. subst.
+  inversion H2. subst. simpl in *.
+  inversion H5; subst.
+  * simpl in H7. inversion H7.
+  * simpl in H7. inversion H8. subst. cbn. (* unfold update. simpl. *) reflexivity.
+Qed.
+
+Goal exists st, | stmt3, aState | -=> st.
+Proof.
+  unfold stmt3.
+(*
+  X := 0; Y := 0;
+  while X <= 2 
+  do 
+    Y := Y + X;
+    X := X + 1
+  end
+*)
+(*   exists (update (update aState Y 3) X 3).
+  Check functional_extensionality. *)
+  eexists.
+  eapply eval_seq.
+  * apply eval_assign.
+  * cbn. eapply eval_seq.
+    - apply eval_assign.
+    - cbn. eapply eval_while_true.
+      + simpl. reflexivity.
+      + eapply eval_seq.
+        ** apply eval_assign.
+        ** cbn. apply eval_assign.
+      + cbn. eapply eval_while_true.
+        ** simpl. reflexivity.
+        ** eapply eval_seq.
+           -- apply eval_assign.
+           -- cbn. apply eval_assign.
+        ** cbn. eapply eval_while_true.
+           -- simpl. reflexivity.
+           -- eapply eval_seq.
+              ++ apply eval_assign.
+              ++ apply eval_assign.
+           -- cbn.
+(*               Check functional_extensionality.
+              assert (update
+  (update (update (update (update (update (update (update aState X 0) Y 0) Y 0) X 1) Y 1) X 2)
+     Y 3) X 3  = update (update aState Y 3) X 3).
+              { (* extensionality x. *) apply functional_extensionality. intros.
+                unfold update. destruct (X =? x)%string.
+                - reflexivity.
+                - destruct (Y =? x)%string; reflexivity.
+              }
+            rewrite H. *)
+            apply eval_while_false. simpl. reflexivity.
+Qed.
+
+Goal exists st,
+  | SIf (BLe (AVar X) (AVar Y)) (SAssign X (AVar Y)) (SAssign Y (AVar X)), aState | -=> st.
+Proof.
+  eexists.
+  apply eval_if_true. (* TODO *)
+Admitted.
+
+Goal exists st,
+  | SIf (BLe (AVar X) (AVar Y)) (SAssign X (AVar Y)) (SAssign Y (AVar X)), update empty X 10 | -=> st.
+Proof.
+  eexists.
+  apply eval_if_false. (* TODO *)
+Admitted.
+
+Lemma update_shadow st x a1 a2: update (update st x a1) x a2 = update st x a2.
+Proof.
+  unfold update.
+  apply functional_extensionality.
+  intro.
+  destruct ((x =? x0)%string); reflexivity.
+Qed.
+
+Lemma update_comm st x y a1 a2 : 
+  x <> y ->
+  update (update st y a1) x a2 = update (update st x a2) y a1.
+Proof.
+  intros. unfold update.
+  apply functional_extensionality.
+  intros.
+  destruct ((x =? x0)%string) eqn:P; destruct ((y =? x0)%string) eqn:P0.
+  * apply String.eqb_eq in P. apply String.eqb_eq in P0. subst. congruence.
+  * reflexivity.
+  * reflexivity.
+  * reflexivity.
+Qed.
+
+Theorem determinism : forall S0 st st', |S0, st| -=> st' -> (forall st'', |S0, st| -=> st'' -> st' = st'').
+Proof.
+  intros S0 st st' H. (* generalize dependent st''. *) induction H; intros.
+  (* Nem jo a szerkezeti indukcio, mert a ciklus nem reszprogramja a ciklusnak
+     (azaz nem lesz indukcios hipotezis az egesz ciklusra, csak a magjara), mig
+     a ciklus szemantikaja fugg a ciklus szemantikajatol (egy koztes statebol inditva)
+  induction S0.
+  5:{
+    intros. inversion H.
+    * inversion H0.
+      - subst. pose (IHS0 st st'0 H4 st'1 H11). rewrite e in *. *)
+  * inversion H. reflexivity.
+  * inversion H. reflexivity.
+  * inversion H1. subst.
+    pose (IHeval_bigstep1 st'0 H4). rewrite <- e in H7.
+    pose (IHeval_bigstep2 st''0 H7). assumption.
+  * inversion H1; subst.
+    - pose (IHeval_bigstep st'' H8). assumption.
+    - rewrite H in H7. inversion H7.
+  * inversion H1; subst.
+    - rewrite H in H7. inversion H7.
+    - pose (IHeval_bigstep st'' H8). assumption.
+  * inversion H2; subst.
+    - pose (IHeval_bigstep1 st'0 H6). rewrite <- e in H9.
+      pose (IHeval_bigstep2 st''0 H9). assumption.
+    - rewrite H in H7. inversion H7.
+  * inversion H0; subst.
+    - rewrite H in H3. inversion H3.
+    - reflexivity.
+Qed.
+
+Definition Equiv (c1 c2 : Stmt) : Prop := forall st,
+  ((exists st1, | c1 , st | -=> st1) <-> 
+  (exists st2, | c2 , st | -=> st2)) /\
+  (forall st1 st2, | c1 , st | -=> st1 /\ | c2 , st | -=> st2 -> forall x, st1 x = st2 x).
+
+(* skip; c === c *)
+Theorem skip_c (c : Stmt) : Equiv c (SSeq SSkip c).
+Proof.
+
+Qed.
+
+Theorem while_unfold b S0: Equiv (SWhile b S0) (SIf b (SSeq S0 (SWhile b S0)) SSkip).
+Proof.
+
+Qed.
+
+
+--------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------------------
+
+
+From Coq Require Import Strings.String
+                        Arith.PeanoNat
+                        Arith.Plus
+                        Program.Equality.
+Require Import Coq.Logic.FunctionalExtensionality.
+
+Definition Ident : Type := string.
+
+Definition X:Ident := "X"%string.
+Definition Y:Ident := "Y"%string.
+Definition Z:Ident := "Z"%string.
+
+Lemma X_neq_Y : (X =? Y)%string = false.
+Proof.
+  apply eqb_neq. intro. inversion H.
+Qed.
+
+Lemma Y_neq_X : (Y =? X)%string = false.
+Proof.
+  apply eqb_neq. intro. inversion H.
+Qed.
+
+Definition State := Ident -> nat.
+
+Definition empty : State := fun x => 0.
+
+Definition update (s : State) (x : Ident) (n : nat) : State :=
+  fun x' =>
+    if eqb x x'
+    then n
+    else s x'.
+
+Definition aState : State := 
+fun x =>
+  match x with
+  | "X"%string => 1
+  | "Y"%string => 2
+  | "Z"%string => 42
+  | _ => 0
+  end.
+
+Inductive AExp : Type :=
+| ALit (n : nat)
+| AVar (x : Ident)
+| APlus (a1 a2 : AExp)
+| AMinus (a1 a2 : AExp)
+| AMult (a1 a2 : AExp).
+
+Inductive BExp : Type :=
+| BFalse
+| BTrue
+| BAnd (b1 b2 : BExp)
+| BNot (b : BExp)
+| BEq (a1 a2 : AExp)
+| BLe (a1 a2 : AExp).
+
+Fixpoint aeval (a : AExp) (st : State) : nat :=
+match a with
+| ALit n => n
+| AVar x => st x
+| APlus a1 a2 => (aeval a1 st) + (aeval a2 st)
+| AMinus a1 a2 => (aeval a1 st) - (aeval a2 st)
+| AMult a1 a2 => (aeval a1 st) * (aeval a2 st)
+end.
+
+Fixpoint beval (b : BExp) (s : State) : bool :=
+match b with
+| BFalse => false
+| BTrue => true
+| BAnd b1 b2 => beval b1 s && beval b2 s
+| BNot b => negb (beval b s)
+| BEq a1 a2 => (aeval a1 s) =? (aeval a2 s)
+| BLe a1 a2 => (aeval a1 s) <=? (aeval a2 s)
+end.
+
+Module bs1.
+
+Inductive Stmt : Type :=
+| SSkip (* skip *)
+| SAssign (x : Ident) (a : AExp) (* x := a *)
+| SSeq (S1 S2 : Stmt) (* S1 ; S2 *)
+| SIf (b : BExp) (S1 S2 : Stmt) (* if b then S1 else S2 *)
+| SWhile (b : BExp) (S0 : Stmt) (* while b do S0 end *).
+
+Reserved Notation "| s , st | -=> st' " (at level 50).
+Inductive eval_bigstep : Stmt -> State -> State -> Prop :=
+
+(*
+  ________________________
+    | skip, st | -=> st
+*)
+| eval_skip (st : State) :
+  | SSkip , st | -=> st
+
+(*
+  __________________________
+   | x := a, st | -=> st[ x <- [[a]]st ]
+*)
+| eval_assign (x : Ident) (a : AExp) (st : State) :
+  | SAssign x a, st | -=> update st x (aeval a st)
+
+(*
+   | S1, st | -=> st'      | S2, st' | -=> st''
+  _______________________________________________
+             | S1; S2, st | -=> st''
+*)
+| eval_seq (S1 S2 : Stmt) (st st' st'' : State) :
+  | S1, st | -=> st' -> | S2, st' | -=> st''
+->
+  | SSeq S1 S2, st | -=> st''
+
+(*
+    [[b]]st = true       | S1, st | -=> st'
+  _____________________________________________
+      | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_true (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = true -> | S1, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+    [[b]]st = false      | S2, st | -=> st'
+  _____________________________________________
+   | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_false (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = false -> | S2, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+
+  while b do S0 end ≡ if b
+                      then S0; while b do S0 end
+                      else skip
+
+
+   [[b]]st = true     | S0, st | -=> st'     | while b do S0 end, st' | -=> st''
+  _______________________________________________________________________________
+                      | while b do S0 end, st | -=> st''
+*)
+| eval_while_true (b : BExp) (S0 : Stmt) (st st' st'' : State) :
+  beval b st = true -> | S0, st | -=> st' -> | SWhile b S0, st' | -=> st''
+->
+  | SWhile b S0, st | -=> st''
+
+(*
+               [[b]]st = false
+   ____________________________________
+     | while b do S0 end, st | -=> st
+*)
+| eval_while_false (b : BExp) (S0 : Stmt) (st : State) :
+  beval b st = false
+->
+  | SWhile b S0, st | -=> st
+
+where "| s , st | -=> st' " := (eval_bigstep s st st').
+
+Definition Equiv (c1 c2 : Stmt) : Prop := forall st st',
+ | c1 , st | -=> st' <-> | c2 , st | -=> st'.
+
+Theorem skip_c (c : Stmt) : Equiv c (SSeq SSkip c).
+Proof.
+  unfold Equiv. intros. unfold "<->". split.
+  * intro. apply eval_seq with (st' := st).
+    - apply eval_skip.
+    - assumption.
+  (** ____________________ eval_skip       __________________ (hypo)
+      | skip, st | -=> st                   | c, st | -=> st'
+    ____________________________________________________________ eval_seq
+            | skip; c , st | -=> st'
+  *)
+  * intro. inversion H. subst. inversion H2. subst. assumption.
+Qed.
+
+Theorem while_unfold b S0: Equiv (SWhile b S0) (SIf b (SSeq S0 (SWhile b S0)) SSkip).
+Proof.
+  unfold Equiv. split; intros.
+  * inversion H; subst.
+    - apply eval_if_true. assumption.
+      apply eval_seq with (st' := st'0). assumption. assumption.
+    - apply eval_if_false. assumption. apply eval_skip.
+  * inversion H; subst.
+    - (* eapply eval_while_true. assumption.
+      inversion H6. subst. exact H2. !!! st'0 nem allt rendelkezesre az eapply hivasakor!*)
+      inversion H6. subst. apply eval_while_true with (st' := st'0).
+      assumption. assumption. assumption.
+    - inversion H6. subst. apply eval_while_false. assumption.
+Qed.
+
+(* X |-> 2
+
+  X := 5;
+  Y := X
+  ≢
+  Y := X;
+  X := 5
+*)
+Goal
+  forall x y n m, x <> y ->
+    Equiv (SSeq (SAssign x (ALit n)) (SAssign y (ALit m)))
+          (SSeq (SAssign y (ALit m)) (SAssign x (ALit n))).
+Proof.
+  unfold Equiv. split; intros.
+  * apply eval_seq with (st' := update st y m). apply eval_assign.
+    inversion H0. subst. inversion H3. inversion H6. subst. cbn in *.
+    replace (update (update st x n) y m) with (update (update st y m) x n).
+    apply eval_assign.
+    unfold update. Check functional_extensionality.
+    apply functional_extensionality. (* extensionality x0. *) intros.
+    destruct (x =? x0)%string eqn:P.
+    - destruct (y =? x0)%string eqn:P0.
+      + apply eqb_eq in P. apply eqb_eq in P0. subst. contradiction.
+      + reflexivity.
+    - reflexivity.
+  * admit.
+Admitted.
+
+End bs1.
+
+(* For Loop *)
+
+Module bs2.
+
+Inductive Stmt : Type :=
+| SSkip (* skip *)
+| SAssign (x : Ident) (a : AExp) (* x := a *)
+| SSeq (S1 S2 : Stmt) (* S1 ; S2 *)
+| SIf (b : BExp) (S1 S2 : Stmt) (* if b then S1 else S2 *)
+| SWhile (b : BExp) (S0 : Stmt) (* while b do S0 end *)
+(* for x := a1..a2 do S0 end 
+  for X := 54 - 78 .. n + 95 do
+   ....
+  end
+*)
+| SFor (x : Ident) (a1 a2 : AExp) (S0 : Stmt).
+
+Reserved Notation "| s , st | -=> st' " (at level 50).
+Inductive eval_bigstep : Stmt -> State -> State -> Prop :=
+
+(*
+  ________________________
+    | skip, st | -=> st
+*)
+| eval_skip (st : State) :
+  | SSkip , st | -=> st
+
+(*
+  __________________________
+   | x := a, st | -=> st[ x <- [[a]]st ]
+*)
+| eval_assign (x : Ident) (a : AExp) (st : State) :
+  | SAssign x a, st | -=> update st x (aeval a st)
+
+(*
+   | S1, st | -=> st'      | S2, st' | -=> st''
+  _______________________________________________
+             | S1; S2, st | -=> st''
+*)
+| eval_seq (S1 S2 : Stmt) (st st' st'' : State) :
+  | S1, st | -=> st' -> | S2, st' | -=> st''
+->
+  | SSeq S1 S2, st | -=> st''
+
+(*
+    [[b]]st = true       | S1, st | -=> st'
+  _____________________________________________
+      | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_true (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = true -> | S1, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+    [[b]]st = false      | S2, st | -=> st'
+  _____________________________________________
+   | if b then S1 else S2, st | -=> st'
+*)
+| eval_if_false (b : BExp) (S1 S2 : Stmt) (st st' : State) :
+  beval b st = false -> | S2, st | -=> st'
+->
+  | SIf b S1 S2, st | -=> st'
+
+(*
+
+  while b do S0 end ≡ if b
+                      then S0; while b do S0 end
+                      else skip
+
+
+   [[b]]st = true     | S0, st | -=> st'     | while b do S0 end, st' | -=> st''
+  _______________________________________________________________________________
+                      | while b do S0 end, st | -=> st''
+*)
+| eval_while_true (b : BExp) (S0 : Stmt) (st st' st'' : State) :
+  beval b st = true -> | S0, st | -=> st' -> | SWhile b S0, st' | -=> st''
+->
+  | SWhile b S0, st | -=> st''
+
+(*
+               [[b]]st = false
+   ____________________________________
+     | while b do S0 end, st | -=> st
+*)
+| eval_while_false (b : BExp) (S0 : Stmt) (st : State) :
+  beval b st = false
+->
+  | SWhile b S0, st | -=> st
+
+(* TODO: for semantics *)
+| eval_for_true x a1 a2 S0 st st' st'' :
+  aeval a1 st <= aeval a2 st ->
+  | S0 , update st x (aeval a1 st) | -=> st' ->
+  | SFor x (APlus a1 (ALit 1)) a2 S0 , st' | -=> st''
+->
+  | SFor x a1 a2 S0, st | -=> st''
+
+(* X := 512; for X := 0 .. 5 do ... end *)
+(* for X := 5 .. 0 do ... end *)
+| eval_for_false x a1 a2 S0 st :
+  aeval a1 st > aeval a2 st
+->
+  | SFor x a1 a2 S0, st | -=> update st x (aeval a1 st)
+
+where "| s , st | -=> st' " := (eval_bigstep s st st').
+
+(*  Szintaktikus cukorka:
+   | x := a1; while x < a2 do S0; x := x + 1 end , st | -=> st'
+  ______________________________________________________________
+              | for x := a1 .. a2 do S0 end, st | -=> st'
+*)
+Definition for_sugar (x : Ident) (a1 a2 : AExp) (S0 : Stmt) : Stmt :=
+  SSeq (SAssign x a1)
+       (SWhile (BLe (AVar x) a2)
+          (SSeq S0 (SAssign x (APlus (AVar x) (ALit 1))))
+       )
+.
+
+Goal
+  | for_sugar X (ALit 0) (ALit 1) (SAssign X (AMult (AVar X) (ALit 3))), empty | -=>
+  update empty X 4.
+Proof.
+  
+Qed.
+
+Goal
+  | SFor X (ALit 0) (ALit 2) (SAssign X (AMult (AVar X) (ALit 3))), empty | -=>
+  update (update empty X 6) X 3.
+Proof.
+  
+Qed.
+
+
+(**
+  Ertekadast fejezd ki szintaktikus cukorkakent a for ciklus segitsegevel!
+*)
+
+End bs2.
+
+
